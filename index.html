@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>女帝启示录</title>
+    <!-- 引入Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入Firebase SDK -->
+    <script type="module">
+        // 导入Firebase模块
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- 核心状态 ---
+        let db, auth;
+        let userId = null;
+        let empressName = "武昭玥"; // 默认
+        const eraName = "启耀";
+        let appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // --- DOM 元素 ---
+        let onboardingScroll, nameSelection, mainApp, loadingScreen;
+        let empressNameDisplay, eraNameDisplay;
+        let timerDisplay, startButton, pauseButton, resetButton;
+        let logTextarea, saveLogButton;
+        let nameInput, confirmNameButton, defaultNameButton;
+        let yunJinIntro;
+        let todayLogDocId = null; // 用于存储今天日志的文档ID
+        let merit = 0; // 简易功德值
+        let llmEndpoint = typeof window.__llm_endpoint !== 'undefined' ? window.__llm_endpoint : null;
+
+        // --- 番茄钟逻辑 ---
+        let timer;
+        let minutes = 25;
+        let seconds = 0;
+        let isPaused = true;
+        let isFocusSession = true; // true: 专注, false: 休息
+
+        // --- 初始化 ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 绑定DOM元素
+            onboardingScroll = document.getElementById('onboardingScroll');
+            nameSelection = document.getElementById('nameSelection');
+            mainApp = document.getElementById('mainApp');
+            loadingScreen = document.getElementById('loadingScreen');
+            empressNameDisplay = document.getElementById('empressNameDisplay');
+            eraNameDisplay = document.getElementById('eraNameDisplay');
+            timerDisplay = document.getElementById('timerDisplay');
+            startButton = document.getElementById('startButton');
+            pauseButton = document.getElementById('pauseButton');
+            resetButton = document.getElementById('resetButton');
+            logTextarea = document.getElementById('logTextarea');
+            saveLogButton = document.getElementById('saveLogButton');
+            nameInput = document.getElementById('nameInput');
+            confirmNameButton = document.getElementById('confirmNameButton');
+            defaultNameButton = document.getElementById('defaultNameButton');
+            yunJinIntro = document.getElementById('yunJinIntro');
+            
+            // 显示加载中
+            loadingScreen.classList.remove('hidden');
+
+            try {
+                // 开发模式：完全绕过Firebase，直接进入应用
+                console.log("开发模式：绕过Firebase，直接启动应用");
+                
+                // 模拟用户数据
+                userId = "dev-user-123";
+                empressName = "武昭玥";
+                
+                // 显示主应用界面
+                setTimeout(() => {
+                    loadingScreen.classList.add('hidden');
+                    mainApp.classList.remove('hidden');
+                    empressNameDisplay.textContent = empressName;
+                    eraNameDisplay.textContent = `【${eraName} 元年】`;
+                    
+                    // 从localStorage加载起居注
+                    const savedLog = localStorage.getItem('dev_daily_log');
+                    logTextarea.value = savedLog || "（今日尚无记录）";
+                    
+                    // 绑定事件监听
+                    bindEvents();
+                    
+                    // 初始化显示
+                    updateDisplay();
+                    initPetals();
+                }, 1000);
+
+            } catch (error) {
+                console.error("应用启动失败:", error);
+                loadingScreen.innerText = "应用启动失败，请刷新页面重试。";
+            }
+        });
+
+        // --- 简化的数据管理（完全绕过Firebase）---
+        function saveProfile(name) {
+            try {
+                empressName = name;
+                // 保存到localStorage
+                localStorage.setItem('dev_empress_name', name);
+                
+                // 更新显示
+                empressNameDisplay.textContent = empressName;
+                
+                // 隐藏选择界面，显示主应用
+                nameSelection.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                
+            } catch (error) {
+                console.error("保存尊号失败:", error);
+                alert("保存尊号失败，请重试。");
+            }
+        }
+
+        // --- 声音系统(WebAudio) ---
+        let audioCtx;
+        function ensureAudio(){
+            if(!audioCtx){
+                try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){}
+            }
+        }
+        function playSfx(type){
+            ensureAudio();
+            if(!audioCtx) return;
+            const now = audioCtx.currentTime;
+            if(type === 'start'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.setValueAtTime(523, now);
+                o.frequency.exponentialRampToValueAtTime(262, now+0.3);
+                g.gain.setValueAtTime(0.0001, now);
+                g.gain.exponentialRampToValueAtTime(0.2, now+0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+0.35);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+0.36);
+            } else if(type === 'pause'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'triangle';
+                o.frequency.setValueAtTime(392, now);
+                g.gain.setValueAtTime(0.15, now);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+0.2);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+0.21);
+            } else if(type === 'end'){
+                // 模拟钟磬
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.setValueAtTime(196, now);
+                g.gain.setValueAtTime(0.0001, now);
+                g.gain.exponentialRampToValueAtTime(0.3, now+0.03);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+1.2);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+1.25);
+            } else if(type === 'click'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'square';
+                o.frequency.setValueAtTime(880, now);
+                g.gain.setValueAtTime(0.08, now);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+0.05);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+0.06);
+            }
+        }
+
+        function loadDailyLog() {
+            try {
+                // 从localStorage加载模拟数据
+                const savedLog = localStorage.getItem('dev_daily_log');
+                logTextarea.value = savedLog || "（今日尚无记录）";
+            } catch (error) {
+                console.error("加载起居注失败:", error);
+                logTextarea.value = "（加载记录失败）";
+            }
+        }
+
+        function saveDailyLog() {
+            try {
+                const content = logTextarea.value.trim();
+                if (!content || content === "（今日尚无记录）") {
+                    alert("请输入记录内容");
+                    return;
+                }
+                
+                // 保存到localStorage
+                localStorage.setItem('dev_daily_log', content);
+                
+                // 显示保存成功提示
+                saveLogButton.disabled = true;
+                saveLogButton.innerText = "存档成功";
+                setTimeout(() => {
+                    saveLogButton.innerText = "保存今日起居注";
+                    saveLogButton.disabled = false;
+                }, 2000);
+                
+            } catch (error) {
+                console.error("保存起居注失败:", error);
+                alert("保存记录失败，请重试。");
+            }
+        }
+        
+        // --- 事件绑定 ---
+        function bindEvents() {
+            // 尊号选择
+            defaultNameButton.addEventListener('click', () => {
+                saveProfile("武昭玥");
+            });
+            confirmNameButton.addEventListener('click', () => {
+                const customName = nameInput.value.trim();
+                if (customName) {
+                    saveProfile(customName);
+                } else {
+                    nameInput.placeholder = "尊号不能为空";
+                }
+            });
+            
+            // 番茄钟控制
+            startButton.addEventListener('click', startTimer);
+            pauseButton.addEventListener('click', pauseTimer);
+            resetButton.addEventListener('click', resetTimer);
+            
+            // 起居注
+            saveLogButton.addEventListener('click', saveDailyLog);
+        }
+
+        // --- 番茄钟功能 ---
+        function updateDisplay() {
+            timerDisplay.innerText = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function startTimer() {
+            if (isPaused) {
+                isPaused = false;
+                startButton.disabled = true;
+                pauseButton.disabled = false;
+                timer = setInterval(tick, 1000);
+                playSfx('start');
+                spawnReward('奏事开始', '#d4b15f');
+            }
+        }
+
+        function pauseTimer() {
+            isPaused = true;
+            startButton.disabled = false;
+            pauseButton.disabled = true;
+            clearInterval(timer);
+            playSfx('pause');
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            isFocusSession = true; // 重置回专注
+            minutes = 25;
+            seconds = 0;
+            updateDisplay();
+            document.getElementById('timerStatus').innerText = "（专注）";
+            startButton.disabled = false;
+            playSfx('click');
+        }
+
+        function tick() {
+            if (isPaused) return;
+
+            if (seconds > 0) {
+                seconds--;
+            } else if (minutes > 0) {
+                minutes--;
+                seconds = 59;
+            } else {
+                // 时间到
+                pauseTimer();
+                notifyUser();
+                playSfx('end');
+                merit += isFocusSession ? 2 : 1;
+                updateMerit();
+                spawnReward(isFocusSession?'+德 2':'+德 1', '#9ae6b4');
+                // 切换状态
+                isFocusSession = !isFocusSession;
+                if (isFocusSession) {
+                    minutes = 25;
+                    document.getElementById('timerStatus').innerText = "（专注）";
+                    triggerRandomEvent();
+                } else {
+                    minutes = 5;
+                    document.getElementById('timerStatus').innerText = "（休息）";
+                }
+                seconds = 0;
+                startButton.disabled = false; // 允许开始下一阶段
+            }
+            updateDisplay();
+        }
+
+        function notifyUser() {
+            // 简单的浏览器通知
+            if (!("Notification" in window)) {
+                console.log("浏览器不支持通知");
+            } else if (Notification.permission === "granted") {
+                sendNotification();
+            } else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then((permission) => {
+                    if (permission === "granted") {
+                        sendNotification();
+                    }
+                });
+            }
+        }
+        
+        function sendNotification() {
+            const title = "陛下，时辰已到";
+            const body = isFocusSession 
+                ? "奏折已批阅完毕，请移步御花园歇息。"
+                : "休息时间已结束，请回宫继续理政。";
+            new Notification(title, { body: body });
+        }
+        
+        // --- 简易功德系统与飘字 ---
+        function updateMerit(){
+            const el = document.getElementById('meritCounter');
+            if(el) el.textContent = merit;
+        }
+        function spawnReward(text, color){
+            const container = document.getElementById('mainApp');
+            if(!container) return;
+            const b = document.createElement('div');
+            b.textContent = text;
+            b.style.position = 'fixed';
+            b.style.left = (window.innerWidth*0.5 + (Math.random()*200-100)) + 'px';
+            b.style.top = (window.innerHeight*0.5 + (Math.random()*40-20)) + 'px';
+            b.style.color = color || '#f3e6c2';
+            b.style.pointerEvents = 'none';
+            b.style.transition = 'transform 1.4s ease-out, opacity 1.4s ease-out';
+            b.style.fontFamily = "KaiTi, STKaiti, serif";
+            b.style.fontSize = '18px';
+            document.body.appendChild(b);
+            requestAnimationFrame(()=>{
+                b.style.transform = 'translateY(-80px)';
+                b.style.opacity = '0';
+            });
+            setTimeout(()=>{ b.remove(); }, 1500);
+        }
+
+        function triggerRandomEvent(){
+            const events = [
+                '御史奏报：边塞无事，国泰民安。',
+                '尚书呈上：府库有余，可减徭赋。',
+                '太常寺：今日吉日，宜读史温书。'
+            ];
+            if(Math.random()<0.5){
+                addChatMessage('系统', events[Math.floor(Math.random()*events.length)]);
+            }
+        }
+
+        // --- 对话与LLM ---
+        async function askLLM(message){
+            // 可选的外部LLM端点，POST {message}
+            if(!llmEndpoint){
+                return fallbackChat(message);
+            }
+            try{
+                const res = await fetch(llmEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message})});
+                if(!res.ok) throw new Error('bad status');
+                const data = await res.json();
+                return data.reply || fallbackChat(message);
+            }catch(e){
+                return fallbackChat(message);
+            }
+        }
+        function fallbackChat(message){
+            const lowers = message.toLowerCase();
+            if(lowers.includes('休息')||lowers.includes('break')) return '小憩亦为蓄力，待气满再理政不迟。';
+            if(lowers.includes('番茄')||lowers.includes('专注')) return '专注二十五分钟，如点兵列阵；短歇五分钟，如整肃旗鼓。';
+            return '微臣以为：持恒为上，心正则事明。陛下且循序，功到自然成。';
+        }
+        function addChatMessage(role, text){
+            const box = document.getElementById('chatMessages');
+            if(!box) return;
+            const row = document.createElement('div');
+            row.className = 'mb-2';
+            const name = document.createElement('span');
+            name.className = 'text-yellow-400 mr-2';
+            name.textContent = role + '：';
+            const span = document.createElement('span');
+            span.textContent = text;
+            row.appendChild(name); row.appendChild(span);
+            box.appendChild(row);
+            box.scrollTop = box.scrollHeight;
+        }
+        async function sendChat(){
+            const input = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('chatSend');
+            const msg = (input?.value || '').trim();
+            if(!msg) return;
+            playSfx('click');
+            addChatMessage('陛下', msg);
+            input.value = '';
+            sendBtn && (sendBtn.disabled = true);
+            const reply = await askLLM(msg);
+            addChatMessage('云瑾', reply);
+            sendBtn && (sendBtn.disabled = false);
+        }
+
+        // --- 花瓣粒子 ---
+        let petalsCanvas, pCtx, petals = [];
+        function initPetals(){
+            petalsCanvas = document.getElementById('petalsCanvas');
+            if(!petalsCanvas) return;
+            pCtx = petalsCanvas.getContext('2d');
+            function resize(){
+                petalsCanvas.width = window.innerWidth; petalsCanvas.height = window.innerHeight;
+            }
+            resize(); window.addEventListener('resize', resize);
+            for(let i=0;i<40;i++) petals.push(makePetal(true));
+            requestAnimationFrame(loop);
+        }
+        function makePetal(randomY){
+            return { x: Math.random()*window.innerWidth, y: randomY?Math.random()*window.innerHeight:-10, r: 4+Math.random()*4, s: 0.5+Math.random()*1.5, a: Math.random()*Math.PI*2 };
+        }
+        function loop(){
+            if(!pCtx) return;
+            pCtx.clearRect(0,0,petalsCanvas.width, petalsCanvas.height);
+            pCtx.fillStyle = 'rgba(233, 200, 170, 0.7)';
+            petals.forEach(p=>{
+                p.a += 0.01; p.x += Math.sin(p.a)*0.6; p.y += p.s;
+                pCtx.beginPath(); pCtx.ellipse(p.x, p.y, p.r, p.r*0.6, p.a, 0, Math.PI*2); pCtx.fill();
+            });
+            for(let i=petals.length-1;i>=0;i--){ if(petals[i].y>window.innerHeight+20){ petals[i]=makePetal(false);} }
+            requestAnimationFrame(loop);
+        }
+    </script>
+    
+    <!-- 像素小人样式 -->
+    <style>
+        @keyframes idleBob { 0%{ transform: translateY(0) } 50%{ transform: translateY(-3px) } 100%{ transform: translateY(0) } }
+        .idle { animation: idleBob 2.4s ease-in-out infinite; }
+        :root{
+            --imperial-bg: #2b1f16;    /* 深胡桃木 */
+            --imperial-panel: #3a2a1a; /* 面板底 */
+            --imperial-ink: #f3e6c2;   /* 宣纸色 */
+            --imperial-gold: #c8a86b;  /* 金色描边 */
+            --imperial-gold-strong: #e5c773; /* 高亮金 */
+        }
+
+        body{
+            font-family: 'KaiTi','STKaiti','Songti SC','Noto Serif SC',serif;
+            background:
+              radial-gradient(1200px 600px at 70% 0%, rgba(255,255,255,0.05), transparent 70%),
+              radial-gradient(1200px 600px at 30% 100%, rgba(255,255,255,0.04), transparent 70%),
+              repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0 4px, rgba(0,0,0,0.02) 4px 8px),
+              var(--imperial-bg) !important;
+            color: var(--imperial-ink);
+        }
+
+        .imperial-panel{
+            background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.15));
+            border: 1px solid var(--imperial-gold);
+            position: relative;
+        }
+        .imperial-panel:before,
+        .imperial-panel:after{
+            content: "";
+            position: absolute;
+            width: 18px; height: 18px;
+            border: 1px solid var(--imperial-gold);
+        }
+        .imperial-panel:before{ left: -6px; top: -6px; }
+        .imperial-panel:after{ right: -6px; bottom: -6px; }
+
+        .imperial-btn{
+            background: linear-gradient(180deg, #b88a2a, #8f6a1f);
+            color: #1b140c !important;
+            border: 1px solid var(--imperial-gold);
+            box-shadow: 0 2px 0 #5c4616, inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        .imperial-btn:hover{ background: linear-gradient(180deg, #d4b15f, #b88a2a); }
+        .imperial-btn:disabled{ background: #8a7a4c; color: #3f3a2c !important; border-color: #7c6b3e; }
+
+        .imperial-sep{
+            height: 10px;
+            background: repeating-linear-gradient(90deg, transparent 0 18px, rgba(200,168,107,0.35) 18px 20px);
+            border-left: 2px solid var(--imperial-gold);
+            border-right: 2px solid var(--imperial-gold);
+        }
+        /* 基础像素块 */
+        .pixel {
+            width: 8px;
+            height: 8px;
+            box-shadow: 0 0 0 0 #000; /* 初始值 */
+        }
+        
+        /* 女帝 武昭玥 (金/红) */
+        .empress-pixel-art {
+            width: 64px; /* 8x8 pixels */
+            height: 96px; /* 12x8 pixels */
+        }
+        
+        /* 这是一个非常简化的像素画实现，使用 box-shadow 
+           box-shadow: [x-offset] [y-offset] [color];
+           (0,0) 是左上角
+        */
+        
+        /* 女帝: 头部 (皇冠) */
+        #empress-head {
+            /* 皇冠 (金) */
+            box-shadow: 
+                16px 0px #FFD700, 24px 0px #FFD700, 32px 0px #FFD700, 40px 0px #FFD700, /* 皇冠顶部 */
+                8px 8px #FFD700, 48px 8px #FFD700, /* 皇冠两侧 */
+            /* 头发 (黑) */
+                16px 8px #222, 24px 8px #222, 32px 8px #222, 40px 8px #222,
+                8px 16px #222, 16px 16px #222, 24px 16px #222, 32px 16px #222, 40px 16px #222, 48px 16px #222,
+            /* 脸 (肤色) */
+                16px 24px #FFDBAC, 24px 24px #FFDBAC, 32px 24px #FFDBAC, 40px 24px #FFDBAC,
+            /* 眼睛 (深红) */
+                16px 24px #8B0000, 40px 24px #8B0000;
+        }
+
+        /* 女帝: 身体 (龙袍 - 红色/金色) */
+        #empress-body {
+            box-shadow:
+            /* 肩膀 (红) */
+                8px 32px #DC2626, 16px 32px #DC2626, 24px 32px #DC2626, 32px 32px #DC2626, 40px 32px #DC2626, 48px 32px #DC2626,
+            /* 龙袍 (红) */
+                16px 40px #DC2626, 24px 40px #DC2626, 32px 40px #DC2626, 40px 40px #DC2626,
+                16px 48px #DC2626, 24px 48px #DC2626, 32px 48px #DC2626, 40px 48px #DC2626,
+                16px 56px #DC2626, 24px 56px #DC2626, 32px 56px #DC2626, 40px 56px #DC2626,
+            /* 金色腰带 */
+                8px 48px #FFD700, 16px 48px #FFD700, 24px 48px #FFD700, 32px 48px #FFD700, 40px 48px #FFD700, 48px 48px #FFD700,
+            /* 裙摆 (红) */
+                8px 64px #DC2626, 16px 64px #DC2626, 24px 64px #DC2626, 32px 64px #DC2626, 40px 64px #DC2626, 48px 64px #DC2626,
+                0px 72px #DC2626, 8px 72px #DC2626, 16px 72px #DC2626, 24px 72px #DC2626, 32px 72px #DC2626, 40px 72px #DC2626, 48px 72px #DC2626, 56px 72px #DC2626;
+        }
+
+        /* 宫女 云瑾 (青/白) */
+        .maid-pixel-art {
+            width: 48px; /* 6x8 pixels */
+            height: 80px; /* 10x8 pixels */
+        }
+
+        /* 宫女: 头部 */
+        #maid-head {
+            box-shadow:
+            /* 头发 (黑) */
+                8px 0px #333, 16px 0px #333, 24px 0px #333, 32px 0px #333,
+                0px 8px #333, 40px 8px #333,
+            /* 脸 (肤色) */
+                8px 8px #FFDBAC, 16px 8px #FFDBAC, 24px 8px #FFDBAC, 32px 8px #FFDBAC,
+                16px 16px #FFDBAC, 24px 16px #FFDBAC,
+            /* 眼睛 (黑) */
+                8px 8px #000, 32px 8px #000;
+        }
+        
+        /* 宫女: 身体 (宫女服 - 青色) */
+        #maid-body {
+            box-shadow:
+            /* 领子 (白) */
+                8px 24px #FFF, 16px 24px #FFF, 24px 24px #FFF, 32px 24px #FFF,
+            /* 衣服 (青) */
+                8px 32px #0D9488, 16px 32px #0D9488, 24px 32px #0D9488, 32px 32px #0D9488,
+                8px 40px #0D9488, 16px 40px #0D9488, 24px 40px #0D9488, 32px 40px #0D9488,
+                8px 48px #0D9488, 16px 48px #0D9488, 24px 48px #0D9488, 32px 48px #0D9488,
+                0px 56px #0D9488, 8px 56px #0D9488, 16px 56px #0D9488, 24px 56px #0D9488, 32px 56px #0D9488, 40px 56px #0D9488;
+        }
+
+    </style>
+</head>
+<body class="text-yellow-200 font-serif min-h-screen antialiased">
+    <canvas id="petalsCanvas" class="fixed inset-0 pointer-events-none" style="z-index:0"></canvas>
+
+    <!-- 加载界面 -->
+    <div id="loadingScreen" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center text-2xl text-yellow-300 z-50">
+        <p>《女帝启示录》原型启动中...</p>
+    </div>
+
+    <!-- 第一步：【强制沉浸，接受天命】 -->
+    <div id="onboardingScroll" class="fixed inset-0 p-8 md:p-20 z-40 flex items-center justify-center overflow-auto hidden" style="background: rgba(0,0,0,0.5)">
+        <div class="w-full max-w-2xl h-full p-10 shadow-2xl overflow-y-auto imperial-panel rounded-lg" style="background-color: var(--imperial-panel)">
+            <h2 class="text-center text-4xl font-bold text-amber-900 mb-8" style="font-family: 'KaiTi', 'STKaiti', serif;">诏曰</h2>
+            <div id="scrollText" class="text-2xl text-amber-900 space-y-6 opacity-0 transition-opacity duration-1000" style="writing-mode: vertical-rl; text-orientation: mixed; margin: 0 auto; height: 400px; font-family: 'KaiTi', 'STKaiti', serif;">
+                <p>奉天承运，皇帝诏曰：</p>
+                <p>兹有天命之子，身负紫微星辰，然元神未定，朝纲待兴。</p>
+                <p>今特赐下《女帝启示录》助尔重整河山，修心明性。</p>
+                <p>钦此！</p>
+            </div>
+            <!-- 模拟钟鼎之声的视觉提示 -->
+            <div class="text-center text-amber-700 mt-8 text-sm opacity-0" style="animation: fadeIn 1s 0.5s forwards;">
+                （钟鼎之声...）
+            </div>
+        </div>
+    </div>
+    
+    <!-- 第二步：【恩威并施，赐予尊名】 -->
+    <div id="nameSelection" class="fixed inset-0 bg-black bg-opacity-80 p-8 z-30 flex items-center justify-center hidden">
+        <div class="p-8 rounded-lg shadow-xl text-center imperial-panel" style="background-color: var(--imperial-panel)">
+            <h3 class="text-2xl text-yellow-300 mb-6">陛下，登基大典已毕，请告知天下您的尊号。</h3>
+            
+            <!-- 默认选项 (强烈推荐) -->
+            <button id="defaultNameButton" class="w-full imperial-btn font-bold py-3 px-6 rounded-lg text-xl transition duration-300 shadow-lg">
+                ✨ 朕即是 武昭玥 ✨
+            </button>
+            
+            <p class="text-yellow-500 my-4">或</p>
+            
+            <!-- 自定义选项 -->
+            <div class="flex space-x-2">
+                <input id="nameInput" type="text" placeholder="朕欲自定名号" class="flex-grow bg-amber-800 border border-yellow-600 text-yellow-200 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-yellow-400" style="border-color: var(--imperial-gold)">
+                <button id="confirmNameButton" class="imperial-btn py-3 px-5 rounded-lg transition">
+                    宣
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 第三步：主应用界面 -->
+    <div id="mainApp" class="container mx-auto p-4 md:p-8 hidden">
+        
+        <!-- 顶部：尊号与年号 -->
+        <header class="text-center mb-8 p-4 rounded-lg shadow-inner imperial-panel">
+            <h1 id="empressNameDisplay" class="text-4xl md:text-5xl font-bold text-yellow-300">武昭玥</h1>
+            <p id="eraNameDisplay" class="text-xl text-yellow-400 mt-2">【启耀 元年】</p>
+        </header>
+
+        <div class="flex flex-col md:flex-row gap-8">
+
+            <!-- 左侧：陪伴区 (像素小人) -->
+            <div class="w-full md:w-1/3 flex flex-col items-center p-4 rounded-lg shadow-inner imperial-panel">
+                <h2 class="text-2xl text-yellow-300 mb-6">御前</h2>
+                <div class="flex justify-center items-end gap-8 h-48">
+                    <!-- 女帝 -->
+                    <div class="flex flex-col items-center">
+                        <div class="empress-pixel-art relative idle">
+                            <div id="empress-head" class="pixel absolute"></div>
+                            <div id="empress-body" class="pixel absolute"></div>
+                        </div>
+                        <p class="text-yellow-300 mt-2 text-sm">陛下 (您)</p>
+                    </div>
+                    
+                    <!-- 宫女 -->
+                    <div class="flex flex-col items-center">
+                        <div class="maid-pixel-art relative idle">
+                            <div id="maid-head" class="pixel absolute"></div>
+                            <div id="maid-body" class="pixel absolute"></div>
+                        </div>
+                        <p class="text-teal-300 mt-2 text-sm">宫女 云瑾</p>
+                    </div>
+                </div>
+                <!-- 云瑾介绍 -->
+                <div id="yunJinIntro" class="mt-6 p-3 bg-teal-900 bg-opacity-40 border rounded-lg text-sm text-teal-200 opacity-0 transition-opacity duration-1000" style="border-color: var(--imperial-gold)">
+                    <p class="font-bold">云瑾：</p>
+                    <p>“陛下，这是尚衣局的宫女云瑾，别看她年纪小，手巧嘴也甜，今后就由她在殿内伺候笔墨茶点吧。”</p>
+                </div>
+                <!-- 对话面板 -->
+                <div class="mt-4 w-full imperial-panel rounded p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-yellow-300">殿中对话</span>
+                        <span class="text-sm text-yellow-500">功德：<span id="meritCounter">0</span></span>
+                    </div>
+                    <div id="chatMessages" class="h-32 overflow-y-auto pr-2 text-sm" style="scrollbar-color: #c8a86b transparent;"></div>
+                    <div class="mt-2 flex gap-2">
+                        <input id="chatInput" class="flex-grow bg-amber-800 border border-yellow-600 text-yellow-200 rounded-md p-2 focus:outline-none" placeholder="陛下请示意...">
+                        <button id="chatSend" class="imperial-btn rounded px-4" onclick="sendChat()">传</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：功能区 (朝政 + 起居) -->
+            <div class="w-full md:w-2/3 flex flex-col gap-8">
+                
+                <!-- 上朝理政 (番茄钟) -->
+                <div class="p-6 rounded-lg shadow-inner imperial-panel">
+                    <h2 class="text-2xl text-yellow-300 mb-4">上朝理政 <span id="timerStatus" class="text-lg">（专注）</span></h2>
+                    <div id="timerDisplay" class="text-8xl font-bold text-white text-center my-6">
+                        25:00
+                    </div>
+                    <div class="flex justify-center gap-4">
+                        <button id="startButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" onclick="playSfx('click')">
+                            开始奏事
+                        </button>
+                        <button id="pauseButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" disabled onclick="playSfx('click')">
+                            暂歇
+                        </button>
+                        <button id="resetButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" onclick="playSfx('click')">
+                            退朝重置
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 起居注 (每日记录) -->
+                <div class="p-6 rounded-lg shadow-inner imperial-panel">
+                    <h2 class="text-2xl text-yellow-300 mb-4">今日起居注</h2>
+                    <textarea id="logTextarea" rows="8" class="w-full p-3 rounded-md text-yellow-200 focus:outline-none focus:ring-2 placeholder-yellow-500" placeholder="陛下，今日有何心得..." style="background-color:#4a3826;border:1px solid var(--imperial-gold)"></textarea>
+                    <button id="saveLogButton" class="mt-4 w-full imperial-btn py-3 rounded-lg font-bold transition shadow-lg">
+                        保存今日起居注
+                    </button>
+                </div>
+                
+            </div>
+        </div>
+        <div class="imperial-sep mt-8 rounded"></div>
+    </div>
+
+</body>
+</html>

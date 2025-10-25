@@ -1,60 +1,39 @@
-from re import S
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 import sys
-import logging
-
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-print("启动女帝启示录应用...")
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # 导入项目模块
 from src.logic.pomodoro_logic import PomodoroTimer
-from src.ai.ai_companion import AICompanion
-
-# 初始化AI伴侣
-companion = AICompanion()
-print("AI伴侣初始化完成")
+from src.ai.ai_companion import companion
 
 class EmpressApp:
     """女帝启示录主应用类"""
     
     def __init__(self, root):
-        print("初始化应用界面...")
         self.root = root
         self.root.title("女帝启示录")
         self.root.geometry("800x600")
         self.root.configure(bg="#2b1f16")
         
-        # 确保窗口在最前面显示
-        self.root.attributes('-topmost', True)
-        self.root.attributes('-topmost', False)
-        
         # 设置中文字体支持
         self._setup_fonts()
-        print("字体设置完成")
-        
         # 设置古风样式
         self._setup_styles()
-        print("样式设置完成")
         
         # 初始化番茄钟
         self.pomodoro = PomodoroTimer()
         self.pomodoro.on_time_update = self._on_time_update
         self.pomodoro.on_session_complete = self._on_session_complete
-        print("番茄钟初始化完成")
         
         # 创建主界面
         self._create_main_frame()
-        print("主框架创建完成")
         
         # 显示初始欢迎界面
         self._show_welcome_screen()
-        print("欢迎界面显示完成")
     
     def _setup_fonts(self):
         """设置中文字体"""
@@ -105,38 +84,36 @@ class EmpressApp:
         self.content_container.pack(fill=tk.BOTH, expand=True)
     
     def _show_welcome_screen(self):
-        """显示简化的欢迎界面，确保能正常显示"""
-        print("显示欢迎界面...")
+        """显示欢迎界面"""
+        # 清空内容容器
+        for widget in self.content_container.winfo_children():
+            widget.destroy()
         
-        # 创建简单的欢迎界面
+        # 创建欢迎界面元素
         welcome_frame = ttk.Frame(self.content_container, style="ImperialPanel.TFrame")
         welcome_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 欢迎标题 - 使用ttk支持的样式
-        title_label = ttk.Label(welcome_frame, text="女帝启示录", font=("SimHei", 24, "bold"))
+        # 欢迎标题
+        title_label = ttk.Label(welcome_frame, text="女帝启示录", style="ImperialTitle.TLabel")
         title_label.pack(pady=50)
         
         # 欢迎信息
-        welcome_text = "欢迎来到女帝启示录！\n点击开始按钮继续"
-        info_label = ttk.Label(welcome_frame, text=welcome_text, font=("SimHei", 14), justify=tk.CENTER)
+        welcome_text = "奉天承运，皇帝诏曰：兹有天命之子，身负紫微星辰，\n然元神未定，朝纲待兴。今特赐下《女帝启示录》\n助尔重整河山，修心明性。钦此！"
+        info_label = ttk.Label(welcome_frame, text=welcome_text, style="Imperial.TLabel", justify=tk.CENTER)
         info_label.pack(pady=20)
-        
-        # 状态文本
-        status_label = ttk.Label(welcome_frame, text="应用正常启动中...", font=("SimHei", 12))
-        status_label.pack(pady=10)
         
         # 开始按钮
         start_button = ttk.Button(
-            welcome_frame,
-            text="开始",
+            welcome_frame, 
+            text="开始你的帝王之旅", 
             command=self._show_main_interface,
             style="Imperial.TButton"
         )
         start_button.pack(pady=30, ipady=10, ipadx=20)
-        print("欢迎界面组件创建完成")
         
-        # 添加一个简单的计时器来确认窗口更新
-        self.root.after(2000, lambda: status_label.config(text="准备就绪！点击开始"))
+        # 设置按钮样式
+        style = ttk.Style()
+        style.configure("Accent.TButton", font=self.font_medium)
     
     def _show_main_interface(self):
         """显示主界面"""
@@ -277,7 +254,7 @@ class EmpressApp:
             message = "短休息时间，陛下请稍作休息"
             self.timer_label.config(text="05:00")
         
-        self.status_label.config(text=message)   
+        self.status_label.config(text=message)
         
         # 显示通知
         messagebox.showinfo("时间到", message)

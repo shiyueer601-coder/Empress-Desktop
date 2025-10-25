@@ -85,6 +85,7 @@
                     
                     // 初始化显示
                     updateDisplay();
+                    updateMerit();
                     initPetals();
                 }, 1000);
 
@@ -111,60 +112,6 @@
             } catch (error) {
                 console.error("保存尊号失败:", error);
                 alert("保存尊号失败，请重试。");
-            }
-        }
-
-        // --- 声音系统(WebAudio) ---
-        let audioCtx;
-        function ensureAudio(){
-            if(!audioCtx){
-                try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){}
-            }
-        }
-        function playSfx(type){
-            ensureAudio();
-            if(!audioCtx) return;
-            const now = audioCtx.currentTime;
-            if(type === 'start'){
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'sine';
-                o.frequency.setValueAtTime(523, now);
-                o.frequency.exponentialRampToValueAtTime(262, now+0.3);
-                g.gain.setValueAtTime(0.0001, now);
-                g.gain.exponentialRampToValueAtTime(0.2, now+0.02);
-                g.gain.exponentialRampToValueAtTime(0.0001, now+0.35);
-                o.connect(g).connect(audioCtx.destination);
-                o.start(); o.stop(now+0.36);
-            } else if(type === 'pause'){
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'triangle';
-                o.frequency.setValueAtTime(392, now);
-                g.gain.setValueAtTime(0.15, now);
-                g.gain.exponentialRampToValueAtTime(0.0001, now+0.2);
-                o.connect(g).connect(audioCtx.destination);
-                o.start(); o.stop(now+0.21);
-            } else if(type === 'end'){
-                // 模拟钟磬
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'sine';
-                o.frequency.setValueAtTime(196, now);
-                g.gain.setValueAtTime(0.0001, now);
-                g.gain.exponentialRampToValueAtTime(0.3, now+0.03);
-                g.gain.exponentialRampToValueAtTime(0.0001, now+1.2);
-                o.connect(g).connect(audioCtx.destination);
-                o.start(); o.stop(now+1.25);
-            } else if(type === 'click'){
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'square';
-                o.frequency.setValueAtTime(880, now);
-                g.gain.setValueAtTime(0.08, now);
-                g.gain.exponentialRampToValueAtTime(0.0001, now+0.05);
-                o.connect(g).connect(audioCtx.destination);
-                o.start(); o.stop(now+0.06);
             }
         }
 
@@ -226,6 +173,59 @@
             
             // 起居注
             saveLogButton.addEventListener('click', saveDailyLog);
+        }
+
+        // --- 声音系统(WebAudio) ---
+        let audioCtx;
+        function ensureAudio(){
+            if(!audioCtx){
+                try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){}
+            }
+        }
+        function playSfx(type){
+            ensureAudio();
+            if(!audioCtx) return;
+            const now = audioCtx.currentTime;
+            if(type === 'start'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.setValueAtTime(523, now);
+                o.frequency.exponentialRampToValueAtTime(262, now+0.3);
+                g.gain.setValueAtTime(0.0001, now);
+                g.gain.exponentialRampToValueAtTime(0.2, now+0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+0.35);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+0.36);
+            } else if(type === 'pause'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'triangle';
+                o.frequency.setValueAtTime(392, now);
+                g.gain.setValueAtTime(0.15, now);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+0.2);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+0.21);
+            } else if(type === 'end'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.setValueAtTime(196, now);
+                g.gain.setValueAtTime(0.0001, now);
+                g.gain.exponentialRampToValueAtTime(0.3, now+0.03);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+1.2);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+1.25);
+            } else if(type === 'click'){
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'square';
+                o.frequency.setValueAtTime(880, now);
+                g.gain.setValueAtTime(0.08, now);
+                g.gain.exponentialRampToValueAtTime(0.0001, now+0.05);
+                o.connect(g).connect(audioCtx.destination);
+                o.start(); o.stop(now+0.06);
+            }
         }
 
         // --- 番茄钟功能 ---
@@ -318,119 +318,6 @@
             new Notification(title, { body: body });
         }
         
-        // --- 简易功德系统与飘字 ---
-        function updateMerit(){
-            const el = document.getElementById('meritCounter');
-            if(el) el.textContent = merit;
-        }
-        function spawnReward(text, color){
-            const container = document.getElementById('mainApp');
-            if(!container) return;
-            const b = document.createElement('div');
-            b.textContent = text;
-            b.style.position = 'fixed';
-            b.style.left = (window.innerWidth*0.5 + (Math.random()*200-100)) + 'px';
-            b.style.top = (window.innerHeight*0.5 + (Math.random()*40-20)) + 'px';
-            b.style.color = color || '#f3e6c2';
-            b.style.pointerEvents = 'none';
-            b.style.transition = 'transform 1.4s ease-out, opacity 1.4s ease-out';
-            b.style.fontFamily = "KaiTi, STKaiti, serif";
-            b.style.fontSize = '18px';
-            document.body.appendChild(b);
-            requestAnimationFrame(()=>{
-                b.style.transform = 'translateY(-80px)';
-                b.style.opacity = '0';
-            });
-            setTimeout(()=>{ b.remove(); }, 1500);
-        }
-
-        function triggerRandomEvent(){
-            const events = [
-                '御史奏报：边塞无事，国泰民安。',
-                '尚书呈上：府库有余，可减徭赋。',
-                '太常寺：今日吉日，宜读史温书。'
-            ];
-            if(Math.random()<0.5){
-                addChatMessage('系统', events[Math.floor(Math.random()*events.length)]);
-            }
-        }
-
-        // --- 对话与LLM ---
-        async function askLLM(message){
-            // 可选的外部LLM端点，POST {message}
-            if(!llmEndpoint){
-                return fallbackChat(message);
-            }
-            try{
-                const res = await fetch(llmEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message})});
-                if(!res.ok) throw new Error('bad status');
-                const data = await res.json();
-                return data.reply || fallbackChat(message);
-            }catch(e){
-                return fallbackChat(message);
-            }
-        }
-        function fallbackChat(message){
-            const lowers = message.toLowerCase();
-            if(lowers.includes('休息')||lowers.includes('break')) return '小憩亦为蓄力，待气满再理政不迟。';
-            if(lowers.includes('番茄')||lowers.includes('专注')) return '专注二十五分钟，如点兵列阵；短歇五分钟，如整肃旗鼓。';
-            return '微臣以为：持恒为上，心正则事明。陛下且循序，功到自然成。';
-        }
-        function addChatMessage(role, text){
-            const box = document.getElementById('chatMessages');
-            if(!box) return;
-            const row = document.createElement('div');
-            row.className = 'mb-2';
-            const name = document.createElement('span');
-            name.className = 'text-yellow-400 mr-2';
-            name.textContent = role + '：';
-            const span = document.createElement('span');
-            span.textContent = text;
-            row.appendChild(name); row.appendChild(span);
-            box.appendChild(row);
-            box.scrollTop = box.scrollHeight;
-        }
-        async function sendChat(){
-            const input = document.getElementById('chatInput');
-            const sendBtn = document.getElementById('chatSend');
-            const msg = (input?.value || '').trim();
-            if(!msg) return;
-            playSfx('click');
-            addChatMessage('陛下', msg);
-            input.value = '';
-            sendBtn && (sendBtn.disabled = true);
-            const reply = await askLLM(msg);
-            addChatMessage('云瑾', reply);
-            sendBtn && (sendBtn.disabled = false);
-        }
-
-        // --- 花瓣粒子 ---
-        let petalsCanvas, pCtx, petals = [];
-        function initPetals(){
-            petalsCanvas = document.getElementById('petalsCanvas');
-            if(!petalsCanvas) return;
-            pCtx = petalsCanvas.getContext('2d');
-            function resize(){
-                petalsCanvas.width = window.innerWidth; petalsCanvas.height = window.innerHeight;
-            }
-            resize(); window.addEventListener('resize', resize);
-            for(let i=0;i<40;i++) petals.push(makePetal(true));
-            requestAnimationFrame(loop);
-        }
-        function makePetal(randomY){
-            return { x: Math.random()*window.innerWidth, y: randomY?Math.random()*window.innerHeight:-10, r: 4+Math.random()*4, s: 0.5+Math.random()*1.5, a: Math.random()*Math.PI*2 };
-        }
-        function loop(){
-            if(!pCtx) return;
-            pCtx.clearRect(0,0,petalsCanvas.width, petalsCanvas.height);
-            pCtx.fillStyle = 'rgba(233, 200, 170, 0.7)';
-            petals.forEach(p=>{
-                p.a += 0.01; p.x += Math.sin(p.a)*0.6; p.y += p.s;
-                pCtx.beginPath(); pCtx.ellipse(p.x, p.y, p.r, p.r*0.6, p.a, 0, Math.PI*2); pCtx.fill();
-            });
-            for(let i=petals.length-1;i>=0;i--){ if(petals[i].y>window.innerHeight+20){ petals[i]=makePetal(false);} }
-            requestAnimationFrame(loop);
-        }
     </script>
     
     <!-- 像素小人样式 -->
@@ -676,13 +563,13 @@
                         25:00
                     </div>
                     <div class="flex justify-center gap-4">
-                        <button id="startButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" onclick="playSfx('click')">
+                        <button id="startButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg">
                             开始奏事
                         </button>
-                        <button id="pauseButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" disabled onclick="playSfx('click')">
+                        <button id="pauseButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" disabled>
                             暂歇
                         </button>
-                        <button id="resetButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg" onclick="playSfx('click')">
+                        <button id="resetButton" class="imperial-btn py-3 px-6 rounded-lg font-bold transition shadow-lg">
                             退朝重置
                         </button>
                     </div>

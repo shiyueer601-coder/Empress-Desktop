@@ -12,6 +12,9 @@ from src.ai.ai_companion import companion
 
 class EmpressApp:
     """女帝启示录主应用类"""
+
+
+    
     
     def __init__(self, root):
         self.root = root
